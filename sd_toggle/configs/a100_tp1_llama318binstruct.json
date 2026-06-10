@@ -1,0 +1,60 @@
+{
+  "hardware": {
+    "gpu": "A100",
+    "tp": 1,
+    "BW_peak": 2039000000000.0,
+    "F_peak": 312000000000000.0,
+    "BW_eff": 1566304179992.2922,
+    "c_comm": 0.0
+  },
+  "model": {
+    "name": "Llama-3.1-8B-Instruct",
+    "W_t": 16060522496.0,
+    "W_d": 5591539712.0,
+    "C_dense": 15009316864,
+    "C_attn": 524288,
+    "kappa_theoretical": 131072,
+    "rho": 0.3481542841082921,
+    "gqa": 4
+  },
+  "calibration": {
+    "eta_d": 1.405,
+    "kappa_eff": 25163,
+    "F_eff": 233514000000000.0,
+    "c_T": 74.0,
+    "c_D": 86.1,
+    "c_V": 214.2,
+    "beta": 0.0,
+    "per_gamma": {}
+  },
+  "metadata": {
+    "created": "2026-04-21",
+    "csv_source": "llama_instruct_sweep.csv",
+    "F_eff_tflops": 233.5,
+    "F_eff_source": "sd_toggle/configs/F_eff_bench_a100.json",
+    "c_comm_ms": 0.0,
+    "c_comm_source": "default",
+    "phase": 1,
+    "fit_loss": "hybrid_0.5comp_0.5lv2",
+    "gammas": [
+      3,
+      7,
+      11,
+      15
+    ],
+    "s2_diagnostics": {
+      "R2": 0.7561476539497559,
+      "rmse_ms": 2.8537567675046214,
+      "n_points": 359,
+      "eta_d": 1.405,
+      "c_D": 86.1,
+      "c_V": 214.2,
+      "loss": 0.026548
+    },
+    "bw_diagnostics": {
+      "BW_eff": 1566304179992.2922,
+      "R2": 0.9159127293374623,
+      "n_points": 45
+    }
+  }
+}

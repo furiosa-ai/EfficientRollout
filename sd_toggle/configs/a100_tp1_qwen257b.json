@@ -1,0 +1,60 @@
+{
+  "hardware": {
+    "gpu": "A100",
+    "tp": 1,
+    "BW_peak": 2039000000000.0,
+    "F_peak": 312000000000000.0,
+    "BW_eff": 1617462633773.974,
+    "c_comm": 0.0
+  },
+  "model": {
+    "name": "Qwen2.5-7B",
+    "W_t": 15230974976.0,
+    "W_d": 5443042304.0,
+    "C_dense": 14140571648,
+    "C_attn": 401408,
+    "kappa_theoretical": 57344,
+    "rho": 0.35736663690780135,
+    "gqa": 7
+  },
+  "calibration": {
+    "eta_d": 1.334,
+    "kappa_eff": 26205,
+    "F_eff": 233514000000000.0,
+    "c_T": 39.0,
+    "c_D": 69.0,
+    "c_V": 152.3,
+    "beta": 0.0,
+    "per_gamma": {}
+  },
+  "metadata": {
+    "created": "2026-04-21",
+    "csv_source": "qwen_7b_sweep.csv",
+    "F_eff_tflops": 233.5,
+    "F_eff_source": "sd_toggle/configs/F_eff_bench_a100.json",
+    "c_comm_ms": 0.0,
+    "c_comm_source": "default",
+    "phase": 1,
+    "fit_loss": "hybrid_0.5comp_0.5lv2",
+    "gammas": [
+      3,
+      7,
+      11,
+      15
+    ],
+    "s2_diagnostics": {
+      "R2": 0.8270874406570217,
+      "rmse_ms": 2.1030816366634992,
+      "n_points": 358,
+      "eta_d": 1.334,
+      "c_D": 69.0,
+      "c_V": 152.3,
+      "loss": 0.017732
+    },
+    "bw_diagnostics": {
+      "BW_eff": 1617462633773.974,
+      "R2": 0.9581688258462085,
+      "n_points": 45
+    }
+  }
+}
