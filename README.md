@@ -11,13 +11,13 @@
 
 <sup>\*</sup>Equal contribution
 
-[![arXiv](https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg)](https://arxiv.org/abs/XXXX.XXXXX)
+[![arXiv](https://img.shields.io/badge/arXiv-2606.18967-b31b1b.svg)](https://arxiv.org/abs/2606.18967)
 
 </div>
 
 ## 🔔 Updates
 
-- **Jun xx, 2026** EfficientRollout is now on arXiv! 🎉
+- **Jun 17, 2026** EfficientRollout is now on arXiv! 🎉
 
 ## 🔍 Overview
 
@@ -147,9 +147,9 @@ If you find EfficientRollout useful, please consider citing:
 
 ```bibtex
 @article{kim2026efficientrollout,
-  title   = {EfficientRollout: System-Aware Self-Speculative Decoding for RL Rollouts},
-  author  = {TBD},
-  journal = {arXiv preprint arXiv:TBD},
-  year    = {2026}
+  title={EfficientRollout: System-Aware Self-Speculative Decoding for RL Rollouts},
+  author={Kim, Minseo and Lee, Minjae and Oh, Seunghyuk and Galim, Kevin and Kim, Donghoon and Hooper, Coleman and Singh, Harman and Gholami, Amir and Koo, Hyung Il and Kang, Wonjun},
+  journal={arXiv preprint arXiv:2606.18967},
+  year={2026}
 }
 ```
