@@ -2,7 +2,7 @@
 
 # EfficientRollout: System-Aware Self-Speculative Decoding for RL Rollouts
 
-<img src="img/banner.png" alt="EfficientRollout" width="100%">
+<img src="img/banner_animated.gif" alt="EfficientRollout" width="100%">
 
 [**Minseo Kim**](https://minseokim.org/)<sup>1</sup>\* · [**Minjae Lee**](https://mjbooo.github.io/)<sup>1</sup>\* · [**Seunghyuk Oh**](https://seunghyukoh.com/)<sup>1</sup> · [**Kevin Galim**](https://kevingalim.com/)<sup>1</sup> · [**Donghoon Kim**](https://scholar.google.co.kr/citations?hl=ko&user=FKPOG1EAAAAJ&hl=en)<sup>1</sup><br>
 [**Coleman Hooper**](https://colemanhooper.org/)<sup>2</sup> · [**Harman Singh**](https://harmandotpy.github.io/)<sup>2</sup> · [**Amir Gholami**](https://amirgholami.org/)<sup>2</sup> · [**Hyung Il Koo**](https://scholar.google.com/citations?user=Oyy8aDMAAAAJ&hl=en)<sup>1</sup> · [**Wonjun Kang**](https://wonjunn.github.io/)<sup>1</sup>
