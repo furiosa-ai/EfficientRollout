@@ -714,6 +714,25 @@ class QuantizedSelfDrafterProposer:
         local_spec_token_ids: list[list[int]] = [
             [] for _ in range(batch_size)
         ]
+        # Token history (output_token_ids extended with in-flight drafts) is
+        # consumed only by the penalties / bad-words logits processors
+        # (sampler.apply_logits_processors; apply_penalties early-returns on
+        # no_penalties). Three regimes:
+        #   neither active -> skip the history entirely. Also removes the
+        #        per-iteration draft_token.tolist() device sync.
+        #   penalties only  -> carry incremental bin counts on-GPU instead
+        #        of rebuilding the [B, L] padded history tensor every draft
+        #        step. Penalties need only the token histogram, which is
+        #        additive, so this is exact (integer counts, no drift) while
+        #        turning O(gamma * B * L) CPU work into O(B * L) once per cycle
+        #        plus an O(B) scatter per step, and it drops the tolist() sync.
+        #   (--) bad words       -> keep the list path: sequence matching cannot
+        #        be expressed as counts.
+        _has_bad_words = bool(sampling_metadata.bad_words_token_ids)
+        _has_penalties = not sampling_metadata.no_penalties
+        needs_token_history = _has_bad_words
+        use_penalty_bins = _has_penalties and not _has_bad_words
+        penalty_bins: dict[str, torch.Tensor] | None = None
 
         # ── SD timing instrumentation ──
         _sd_timing = os.environ.get("VLLM_SD_TIMING", "0") == "1"
@@ -796,8 +815,15 @@ class QuantizedSelfDrafterProposer:
 
             logits = self.model.compute_logits(model_hidden[:batch_size])
 
+            # Lazy init: vocab_size must come from the logits width, matching
+            # upstream apply_penalties (`_, vocab_size = logits.shape`).
+            if use_penalty_bins and penalty_bins is None:
+                penalty_bins = self._init_penalty_bins(
+                    sampling_metadata, batch_size, logits.shape[-1]
+                )
+
             processed_logits = self._process_draft_logits(
-                logits, sampling_metadata, local_spec_token_ids
+                logits, sampling_metadata, local_spec_token_ids, penalty_bins
             )
 
             draft_probs = processed_logits.softmax(
@@ -814,8 +840,19 @@ class QuantizedSelfDrafterProposer:
             draft_token_ids_list.append(draft_token)
             draft_probs_list.append(draft_probs)
 
-            for req_idx, token_id in enumerate(draft_token.tolist()):
-                local_spec_token_ids[req_idx].append(token_id)
+            # Last iteration's history is never consumed (no further
+            # _process_draft_logits call), so skip its update as well.
+            if draft_index < self.gamma - 1:
+                if needs_token_history:
+                    for req_idx, token_id in enumerate(draft_token.tolist()):
+                        local_spec_token_ids[req_idx].append(token_id)
+                elif penalty_bins is not None:
+                    # Pure device-side histogram update — no D2H sync.
+                    penalty_bins["counts"].scatter_add_(
+                        1,
+                        draft_token.long().unsqueeze(1),
+                        penalty_bins["ones"],
+                    )
 
             self.input_ids[:batch_size] = draft_token.int()
 
@@ -842,14 +879,122 @@ class QuantizedSelfDrafterProposer:
 
         return draft_token_ids, draft_probs
 
+    def _init_penalty_bins(
+        self,
+        sampling_metadata: SamplingMetadata,
+        batch_size: int,
+        vocab_size: int,
+    ) -> dict[str, torch.Tensor]:
+        """Seed the incremental penalty state for one propose() call.
+
+        Mirrors upstream `apply_all_penalties` / `get_token_bin_counts_and_mask`
+        exactly: counts live in a [B, vocab_size + 1] buffer whose last column
+        absorbs the pad id, and the prompt mask is constant for the whole cycle.
+        State is scoped to a single propose() call, so there is no cross-request
+        or cross-step staleness to reason about.
+        """
+        from vllm.model_executor.layers.utils import (
+            get_token_bin_counts_and_mask,
+        )
+        from vllm.v1.sample.ops.penalties import _convert_to_tensors
+
+        # Same precondition as Sampler.apply_penalties.
+        assert sampling_metadata.prompt_token_ids is not None
+        device = sampling_metadata.frequency_penalties.device
+        _, prompt_mask = get_token_bin_counts_and_mask(
+            sampling_metadata.prompt_token_ids, vocab_size, batch_size
+        )
+
+        base_output_token_ids = list(
+            sampling_metadata.output_token_ids[:batch_size]
+        )
+        if len(base_output_token_ids) < batch_size:
+            base_output_token_ids.extend(
+                [[] for _ in range(batch_size - len(base_output_token_ids))]
+            )
+        output_tokens_t = _convert_to_tensors(
+            base_output_token_ids, vocab_size, device
+        )
+        # Same async-scheduling placeholder handling as apply_all_penalties.
+        output_tokens_t.masked_fill_(output_tokens_t == -1, vocab_size)
+
+        counts = torch.zeros(
+            (batch_size, vocab_size + 1), dtype=torch.long, device=device
+        )
+        counts.scatter_add_(1, output_tokens_t, torch.ones_like(output_tokens_t))
+        return {
+            "counts": counts,
+            "prompt_mask": prompt_mask,
+            "ones": torch.ones(
+                (batch_size, 1), dtype=torch.long, device=device
+            ),
+        }
+
+    def _apply_logits_processors_binned(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        penalty_bins: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Mirror of Sampler.apply_logits_processors with binned penalties.
+
+        Identical to the upstream sequence minus the bad-words branch (excluded
+        by the caller) and minus the spec-token combine (predict_bonus_token is
+        False for drafting). The penalty term is computed from the carried
+        histogram rather than a freshly padded [B, L] token tensor; the two are
+        equal by construction since the histogram is additive over tokens.
+        """
+        from vllm._custom_ops import apply_repetition_penalties
+
+        if sampling_metadata.allowed_token_ids_mask is not None:
+            logits.masked_fill_(
+                sampling_metadata.allowed_token_ids_mask, float("-inf")
+            )
+        for processor in sampling_metadata.logitsprocs.non_argmax_invariant:
+            logits = processor.apply(logits)
+
+        vocab_size = logits.shape[-1]
+        output_bin_counts = penalty_bins["counts"][:, :vocab_size]
+        output_mask = output_bin_counts > 0
+        apply_repetition_penalties(
+            logits,
+            penalty_bins["prompt_mask"],
+            output_mask,
+            sampling_metadata.repetition_penalties,
+        )
+        logits -= sampling_metadata.frequency_penalties.unsqueeze(
+            dim=1
+        ) * output_bin_counts
+        logits -= sampling_metadata.presence_penalties.unsqueeze(
+            dim=1
+        ) * output_mask
+        return logits
+
     def _process_draft_logits(
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
         local_spec_token_ids: list[list[int]],
+        penalty_bins: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """Process draft logits with temperature/top-k/top-p."""
         assert self.runner is not None
+
+        # Penalties, no bad words: apply them from the carried histogram.
+        if penalty_bins is not None:
+            return self._apply_sampling_ops(
+                logits, sampling_metadata, penalty_bins=penalty_bins
+            )
+
+        # Fast path: with no penalties and no bad-words, output_token_ids is
+        # unread downstream (verified: apply_logits_processors uses it only
+        # for apply_bad_words / apply_penalties; predict_bonus_token=False
+        # means spec_token_ids is unread too) — reuse the metadata as-is.
+        if not (
+            bool(sampling_metadata.bad_words_token_ids)
+            or not sampling_metadata.no_penalties
+        ):
+            return self._apply_sampling_ops(logits, sampling_metadata)
 
         base_output_token_ids = list(
             sampling_metadata.output_token_ids[:len(local_spec_token_ids)]
@@ -874,27 +1019,40 @@ class QuantizedSelfDrafterProposer:
             output_token_ids=step_output_token_ids,
             spec_token_ids=None,
         )
+        return self._apply_sampling_ops(logits, step_sampling_metadata)
 
+    def _apply_sampling_ops(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        penalty_bins: dict[str, torch.Tensor] | None = None,
+    ) -> torch.Tensor:
+        """Shared logits pipeline: processors → temperature → top-k/top-p."""
         processed_logits = logits.to(torch.float32)
-        processed_logits = self.runner.sampler.apply_logits_processors(
-            processed_logits,
-            step_sampling_metadata,
-            predict_bonus_token=False,
-        )
-        if step_sampling_metadata.all_greedy:
+        if penalty_bins is not None:
+            processed_logits = self._apply_logits_processors_binned(
+                processed_logits, sampling_metadata, penalty_bins
+            )
+        else:
+            processed_logits = self.runner.sampler.apply_logits_processors(
+                processed_logits,
+                sampling_metadata,
+                predict_bonus_token=False,
+            )
+        if sampling_metadata.all_greedy:
             return processed_logits
 
         processed_logits = self.runner.sampler.apply_temperature(
             processed_logits,
-            step_sampling_metadata.temperature,
-            step_sampling_metadata.all_random,
+            sampling_metadata.temperature,
+            sampling_metadata.all_random,
         )
-        for processor in step_sampling_metadata.logitsprocs.argmax_invariant:
+        for processor in sampling_metadata.logitsprocs.argmax_invariant:
             processed_logits = processor.apply(processed_logits)
         return apply_top_k_top_p(
             processed_logits,
-            step_sampling_metadata.top_k,
-            step_sampling_metadata.top_p,
+            sampling_metadata.top_k,
+            sampling_metadata.top_p,
         )
 
     def requantize(
