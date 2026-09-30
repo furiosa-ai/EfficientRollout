@@ -17,8 +17,9 @@
 
 ## 🔔 Updates
 
+- **Sep 24, 2026** EfficientRollout has been accepted to NeurIPS 2026! 🎉
 - **Jun 17, 2026** EfficientRollout is now on arXiv!
-- **May 30, 2026** EfficientRollout is accepted to ICML 2026 AdaptFM Workshop! 🎉
+- **May 30, 2026** EfficientRollout has been accepted to the ICML 2026 AdaptFM Workshop! 🎉
 
 ## 🔍 Overview
 
